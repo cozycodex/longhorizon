@@ -1,0 +1,909 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Long Horizon Session Description Fixer</title>
+  <style>
+    :root {
+      --bg: #eef3fb;
+      --card: #ffffff;
+      --ink: #0f172a;
+      --muted: #64748b;
+      --line: #d7e0ef;
+      --primary: #2563eb;
+      --primary-dark: #1d4ed8;
+      --soft: #f8fafc;
+      --good: #15803d;
+      --warn: #b45309;
+      --bad: #b91c1c;
+      --shadow: 0 12px 30px rgba(15, 23, 42, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: "Segoe UI", Arial, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(37, 99, 235, 0.14), transparent 34%),
+        linear-gradient(135deg, #f8fbff 0%, var(--bg) 100%);
+    }
+
+    .page {
+      width: min(1040px, calc(100vw - 24px));
+      height: calc(100vh - 24px);
+      margin: 12px auto;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 10px;
+      min-height: 0;
+    }
+
+    .hero {
+      background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+      color: white;
+      border-radius: 20px;
+      padding: 18px 24px;
+      box-shadow: var(--shadow);
+      display: grid;
+      gap: 0;
+    }
+
+    .hero h1 {
+      margin: 0;
+      font-size: 25px;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+    }
+
+    .hero p,
+    .notice,
+    .pill-row {
+      display: none;
+    }
+
+    .grid {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: auto auto minmax(120px, 1fr);
+      gap: 10px;
+      margin-top: 0;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 13px;
+      box-shadow: 0 8px 22px rgba(15, 23, 42, 0.07);
+      min-width: 0;
+    }
+
+    .card.full { grid-column: 1 / -1; }
+
+    .card h2 {
+      margin: 0 0 8px;
+      font-size: 16px;
+      letter-spacing: -0.01em;
+    }
+
+    .help {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.32;
+      margin: 0 0 10px;
+    }
+
+    .row {
+      display: grid;
+      gap: 5px;
+      margin-bottom: 8px;
+    }
+
+    label {
+      font-size: 12px;
+      font-weight: 700;
+      color: #334155;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      font: inherit;
+      border: 1px solid #c7d3e5;
+      border-radius: 10px;
+      background: #fff;
+      color: var(--ink);
+      padding: 8px 10px;
+      outline: none;
+      font-size: 13px;
+    }
+
+    input, select {
+      height: 34px;
+    }
+
+    input[readonly] {
+      background: var(--soft);
+    }
+
+    select { cursor: pointer; }
+
+    button {
+      min-height: 34px;
+      border: 0;
+      border-radius: 10px;
+      background: var(--primary);
+      color: white;
+      font-weight: 800;
+      padding: 8px 13px;
+      cursor: pointer;
+      transition: transform 120ms ease, background 120ms ease, opacity 120ms ease;
+      font-size: 13px;
+    }
+
+    button:hover { background: var(--primary-dark); transform: translateY(-1px); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+    .button-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .secondary { background: #475569; }
+    .secondary:hover { background: #334155; }
+
+    .status {
+      min-height: 0;
+      height: clamp(105px, 18vh, 160px);
+      resize: none;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 12px;
+      line-height: 1.35;
+      white-space: pre-wrap;
+      overflow: auto;
+    }
+
+    .progress-wrap {
+      margin-top: 6px;
+      margin-bottom: 8px;
+      display: grid;
+      gap: 5px;
+    }
+
+    .progress-label {
+      font-size: 12px;
+      font-weight: 700;
+      color: #334155;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .progress-track {
+      width: 100%;
+      height: 9px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: #e2e8f0;
+      border: 1px solid #cbd5e1;
+    }
+
+    .progress-fill {
+      width: 0%;
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--primary), #60a5fa);
+      transition: width 180ms ease;
+    }
+
+    .danger { color: var(--bad); }
+    .success { color: var(--good); }
+
+    .card.full:first-child {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      grid-template-areas:
+        "title title"
+        "help help"
+        "buttons selected";
+      gap: 8px 12px;
+      align-items: end;
+    }
+
+    .card.full:first-child h2 { grid-area: title; }
+    .card.full:first-child .help { grid-area: help; margin-bottom: 0; }
+    .card.full:first-child .button-row { grid-area: buttons; }
+
+    .card.full:first-child .row {
+      grid-area: selected;
+      width: min(420px, 42vw);
+      margin: 0;
+    }
+
+    .card.full:last-child {
+      min-height: 0;
+      padding-bottom: 16px;
+      display: grid;
+      grid-template-rows: auto minmax(0, auto) auto;
+    }
+
+    .card.full:last-child h2 {
+      margin-bottom: 7px;
+    }
+
+    @media (max-width: 820px) {
+      html,
+      body {
+        overflow: auto;
+        height: auto;
+      }
+
+      .page {
+        height: auto;
+        min-height: 100vh;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .card.full:first-child {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+          "title"
+          "help"
+          "buttons"
+          "selected";
+      }
+
+      .card.full:first-child .row {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <h1>Long Horizon Session Description Fixer</h1>
+    </section>
+
+    <section class="grid">
+      <div class="card full">
+        <h2>Session Folder</h2>
+        <p class="help">Choose the root session folder named like <b>YYYY-MM-DD-HH-MM-SS</b>.</p>
+        <div class="button-row">
+          <button id="pickFolderButton">Browse Session Folder</button>
+          <button id="validateButton" class="secondary" disabled>Validate Again</button>
+        </div>
+        <div class="row" style="margin-top:12px; margin-bottom:0;">
+          <label>Selected folder</label>
+          <input id="folderName" readonly placeholder="No folder selected">
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Step 1: Segregate Folders</h2>
+        <p class="help">LI 1 gets even episodes. LI 2 gets odd episodes. Logs are copied into both LI session folders.</p>
+        <button id="segregateButton" disabled>Create LI 1 and LI 2 Folders</button>
+      </div>
+
+      <div class="card">
+        <h2>Step 2: Fix Descriptions</h2>
+        <div class="row">
+          <label for="taskName">Task Name</label>
+          <select id="taskName"></select>
+        </div>
+        <div class="row">
+          <label for="li1Description">LI 1 Description</label>
+          <input id="li1Description" readonly>
+        </div>
+        <div class="row">
+          <label for="li2Description">LI 2 Description</label>
+          <input id="li2Description" readonly>
+        </div>
+        <button id="fixButton" disabled>Start Description Fix</button>
+      </div>
+
+      <div class="card full">
+        <h2>Processing Log</h2>
+        <textarea id="logBox" class="status" readonly></textarea>
+        <div id="progressWrap" class="progress-wrap">
+          <div class="progress-label">
+            <span id="progressText">Ready</span>
+            <span id="progressPercent">0%</span>
+          </div>
+          <div class="progress-track">
+            <div id="progressFill" class="progress-fill"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const APP_VERSION = "html-light-modern-v4-clean-logs";
+
+    const TASK_DESCRIPTION_MAP = {
+      "assembly-disassembly-Cars3Mcqueen": ["assembly-Cars3Mcqueen", "disassembly-Cars3Mcqueen"],
+      "assembly-disassembly-buildingsquishies": ["assembly-buildingsquishies", "disassembly-buildingsquishies"],
+      "assembly-disassembly-carscoppercanyon": ["assembly-carscoppercanyon", "disassembly-carscoppercanyon"],
+      "assembly-disassembly-cashregister": ["assembly-cashregister", "disassembly-cashregister"],
+      "assembly-disassembly-celebrationcake": ["assembly-celebrationcake", "disassembly-celebrationcake"],
+      "assembly-disassembly-designanddrill": ["assembly-designanddrill", "disassembly-designanddrill"],
+      "assembly-disassembly-designDrillrobot": ["assembly-designDrillrobot", "disassembly-designDrillrobot"],
+      "assembly-disassembly-dinocart": ["assembly-dinocart", "disassembly-dinocart"],
+      "assembly-disassembly-duplocat": ["assembly-duplocat", "disassembly-duplocat"],
+      "assembly-disassembly-duploduck": ["assembly-duploduck", "disassembly-duploduck"],
+      "assembly-disassembly-duplofish": ["assembly-duplofish", "disassembly-duplofish"],
+      "assembly-disassembly-espresso": ["assembly-espresso", "disassembly-espresso"],
+      "assembly-disassembly-ferriswheel": ["assembly-ferriswheel", "disassembly-ferriswheel"],
+      "assembly-disassembly-gearbot": ["assembly-gearbot", "disassembly-gearbot"],
+      "assembly-disassembly-hammerandnail": ["assembly-hammerandnail", "disassembly-hammerandnail"],
+      "assembly-disassembly-jumbogearset": ["assembly-jumbogearset", "disassembly-jumbogearset"],
+      "assembly-disassembly-magnatiles": ["assembly-magnatiles", "disassembly-magnatiles"],
+      "assembly-disassembly-magneticcubes": ["assembly-magneticcubes", "disassembly-magneticcubes"],
+      "assembly-disassembly-marblerun": ["assembly-marblerun", "disassembly-marblerun"],
+      "assembly-disassembly-megablocks": ["assembly-megablocks", "disassembly-megablocks"],
+      "assembly-disassembly-powercuts": ["assembly-powercuts", "disassembly-powercuts"],
+      "assembly-disassembly-pupgo-car": ["assembly-pupgo-car", "disassembly-pupgo-car"],
+      "assembly-disassembly-racingcar": ["assembly-racingcar", "disassembly-racingcar"],
+      "assembly-disassembly-saw": ["assembly-saw", "disassembly-saw"],
+      "assembly-disassembly-toolbox": ["assembly-toolbox", "disassembly-toolbox"]
+    };
+
+    const SESSION_PATTERN = /^\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}$/;
+    const LI_PATTERN = /^LI ([12]) \[(.+)\]$/;
+    const OLD_LI_PATTERN = /^LI ([12]) (.+)$/;
+
+    let sessionHandle = null;
+
+    const pickFolderButton = document.getElementById("pickFolderButton");
+    const validateButton = document.getElementById("validateButton");
+    const segregateButton = document.getElementById("segregateButton");
+    const fixButton = document.getElementById("fixButton");
+    const folderName = document.getElementById("folderName");
+    const taskName = document.getElementById("taskName");
+    const li1Description = document.getElementById("li1Description");
+    const li2Description = document.getElementById("li2Description");
+    const logBox = document.getElementById("logBox");
+    const progressWrap = document.getElementById("progressWrap");
+    const progressText = document.getElementById("progressText");
+    const progressPercent = document.getElementById("progressPercent");
+    const progressFill = document.getElementById("progressFill");
+
+    function setLog(text) {
+      logBox.value = text;
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    function showProgress(label = "Working") {
+      progressWrap.style.display = "grid";
+      setProgress(0, label);
+    }
+
+    function setProgress(percent, label = null) {
+      const safePercent = Math.max(0, Math.min(100, Math.round(percent)));
+      progressFill.style.width = `${safePercent}%`;
+      progressPercent.textContent = `${safePercent}%`;
+      if (label !== null) progressText.textContent = label;
+    }
+
+    function finishProgress(label = "Complete") {
+      setProgress(100, label);
+      setTimeout(() => {
+        setProgress(0, "Ready");
+      }, 900);
+    }
+
+    function resetProgress() {
+      setProgress(0, "Ready");
+    }
+
+    function nextFrame() {
+      return new Promise(resolve => requestAnimationFrame(resolve));
+    }
+
+    function escapeRegex(text) {
+      return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }
+
+    function episodePattern(sessionName) {
+      return new RegExp(`^${escapeRegex(sessionName)}-.+-(\\d{5})$`);
+    }
+
+    function episodeNumberFromName(sessionName, folderNameValue) {
+      const match = folderNameValue.match(episodePattern(sessionName));
+      return match ? Number.parseInt(match[1], 10) : null;
+    }
+
+    function safeOperator(operator) {
+      const cleaned = String(operator || "")
+        .trim()
+        .replace(/[<>:"/\\|?*]+/g, "_")
+        .replace(/\s+/g, " ")
+        .replace(/^[ .]+|[ .]+$/g, "");
+      return cleaned || "unknown_operator";
+    }
+
+    async function readJson(fileHandle) {
+      const file = await fileHandle.getFile();
+      return JSON.parse(await file.text());
+    }
+
+    async function writeJson(fileHandle, data) {
+      const writable = await fileHandle.createWritable();
+      await writable.write(JSON.stringify(data, null, 4) + "\n");
+      await writable.close();
+    }
+
+    async function hasEntry(directoryHandle, name) {
+      try {
+        await directoryHandle.getFileHandle(name);
+        return "file";
+      } catch (_) {}
+      try {
+        await directoryHandle.getDirectoryHandle(name);
+        return "directory";
+      } catch (_) {}
+      return null;
+    }
+
+    async function getRootEpisodeFolders(sessionDir) {
+      const episodes = [];
+      for await (const [name, handle] of sessionDir.entries()) {
+        if (handle.kind !== "directory") continue;
+        const number = episodeNumberFromName(sessionDir.name, name);
+        if (number !== null) episodes.push({ name, handle, number });
+      }
+      episodes.sort((a, b) => a.name.localeCompare(b.name));
+      return episodes;
+    }
+
+    async function findOperator(sessionDir) {
+      const episodes = await getRootEpisodeFolders(sessionDir);
+      for (const episode of episodes) {
+        try {
+          const metadataHandle = await episode.handle.getFileHandle("metadata.json");
+          const metadata = await readJson(metadataHandle);
+          const operator = String(metadata?.config?.operator || "").trim();
+          if (operator) return safeOperator(operator);
+        } catch (_) {}
+      }
+      const metadataFiles = await findFilesRecursive(sessionDir, "metadata.json");
+      for (const item of metadataFiles) {
+        try {
+          const metadata = await readJson(item.handle);
+          const operator = String(metadata?.config?.operator || "").trim();
+          if (operator) return safeOperator(operator);
+        } catch (_) {}
+      }
+      throw new Error("Could not find config.operator in any metadata.json file.");
+    }
+
+    async function findFilesRecursive(directoryHandle, filename, results = []) {
+      for await (const [name, handle] of directoryHandle.entries()) {
+        if (handle.kind === "file" && name === filename) {
+          results.push({ name, handle, parent: directoryHandle });
+        } else if (handle.kind === "directory") {
+          await findFilesRecursive(handle, filename, results);
+        }
+      }
+      return results;
+    }
+
+    async function copyFile(sourceFileHandle, destinationDir, targetName) {
+      const sourceFile = await sourceFileHandle.getFile();
+      const targetFileHandle = await destinationDir.getFileHandle(targetName, { create: true });
+      const writable = await targetFileHandle.createWritable();
+      await writable.write(await sourceFile.arrayBuffer());
+      await writable.close();
+    }
+
+    async function copyDirectory(sourceDir, destinationDir) {
+      for await (const [name, handle] of sourceDir.entries()) {
+        if (handle.kind === "directory") {
+          const targetChildDir = await destinationDir.getDirectoryHandle(name, { create: true });
+          await copyDirectory(handle, targetChildDir);
+        } else {
+          await copyFile(handle, destinationDir, name);
+        }
+      }
+    }
+
+    async function removeDirectoryContents(directoryHandle) {
+      const names = [];
+      for await (const [name] of directoryHandle.entries()) names.push(name);
+      for (const name of names) {
+        await directoryHandle.removeEntry(name, { recursive: true });
+      }
+    }
+
+    async function mergeDirectoryIntoParent(sourceParent, sourceName, destinationDir) {
+      const sourceDir = await sourceParent.getDirectoryHandle(sourceName);
+      await copyDirectory(sourceDir, destinationDir);
+      await sourceParent.removeEntry(sourceName, { recursive: true });
+    }
+
+    async function migrateOldLiNames(sessionDir, operator) {
+      const messages = [];
+      for (const liNumber of ["1", "2"]) {
+        const oldName = `LI ${liNumber} ${operator}`;
+        const newName = `LI ${liNumber} [${operator}]`;
+        const oldKind = await hasEntry(sessionDir, oldName);
+        if (oldKind !== "directory") continue;
+        const oldDir = await sessionDir.getDirectoryHandle(oldName);
+        const newDir = await sessionDir.getDirectoryHandle(newName, { create: true });
+        await copyDirectory(oldDir, newDir);
+        await sessionDir.removeEntry(oldName, { recursive: true });
+        messages.push(`Migrated ${oldName} into ${newName}`);
+      }
+      return messages;
+    }
+
+    async function copyLogsToEachLiThenRemoveRootLogs(sessionDir, liSessionDirs) {
+      const kind = await hasEntry(sessionDir, "logs");
+      if (kind !== "directory") return "No root logs folder found.";
+      const rootLogs = await sessionDir.getDirectoryHandle("logs");
+      for (const liSessionDir of liSessionDirs) {
+        const targetLogs = await liSessionDir.getDirectoryHandle("logs", { create: true });
+        await copyDirectory(rootLogs, targetLogs);
+      }
+      await sessionDir.removeEntry("logs", { recursive: true });
+      return "Copied logs into both LI session folders and removed the root logs folder.";
+    }
+
+    async function getSortedRootItemNames(sessionDir) {
+      const names = [];
+      for await (const [name] of sessionDir.entries()) names.push(name);
+      return names.sort((a, b) => a.localeCompare(b));
+    }
+
+    async function findLiSessionPaths(sessionDir) {
+      const found = { "1": null, "2": null };
+      for await (const [name, handle] of sessionDir.entries()) {
+        if (handle.kind !== "directory") continue;
+        const match = name.match(LI_PATTERN) || name.match(OLD_LI_PATTERN);
+        if (!match) continue;
+        const liNumber = match[1];
+        try {
+          found[liNumber] = await handle.getDirectoryHandle(sessionDir.name);
+        } catch (_) {
+          found[liNumber] = handle;
+        }
+      }
+      return found;
+    }
+
+    async function metadataFilesForLi(liSessionDir, sessionName) {
+      if (!liSessionDir) return [];
+      const metadataPaths = [];
+      for await (const [name, handle] of liSessionDir.entries()) {
+        if (handle.kind !== "directory") continue;
+        if (!episodePattern(sessionName).test(name)) continue;
+        try {
+          const metadataHandle = await handle.getFileHandle("metadata.json");
+          metadataPaths.push({ name: `${name}/metadata.json`, handle: metadataHandle });
+        } catch (_) {}
+      }
+      metadataPaths.sort((a, b) => a.name.localeCompare(b.name));
+      return metadataPaths;
+    }
+
+    async function updateMetadataDescription(metadataFile, description) {
+      const metadata = await readJson(metadataFile);
+      metadata.session = metadata.session || {};
+      metadata.config = metadata.config || {};
+      metadata.session.description = description;
+      metadata.config.description = description;
+      await writeJson(metadataFile, metadata);
+    }
+
+    async function collectDescriptions(sessionDir) {
+      const descriptions = [];
+      const seen = new Set();
+      const files = await findFilesRecursive(sessionDir, "metadata.json");
+      for (const item of files) {
+        try {
+          const metadata = await readJson(item.handle);
+          for (const value of [metadata?.session?.description, metadata?.config?.description]) {
+            const text = String(value || "").trim();
+            if (text && !seen.has(text)) {
+              descriptions.push(text);
+              seen.add(text);
+            }
+          }
+        } catch (_) {}
+      }
+      return descriptions;
+    }
+
+    async function validateSessionFolder() {
+      if (!sessionHandle) return;
+
+      const rootEpisodes = await getRootEpisodeFolders(sessionHandle);
+      const liPaths = await findLiSessionPaths(sessionHandle);
+      const descriptions = await collectDescriptions(sessionHandle);
+      const messages = [];
+
+      if (!SESSION_PATTERN.test(sessionHandle.name)) {
+        messages.push("Issue: session folder name must look like YYYY-MM-DD-HH-MM-SS");
+      } else {
+        messages.push("Session validated successfully");
+      }
+
+      if (rootEpisodes.length) {
+        messages.push(`Found root episode folders: ${rootEpisodes.length}`);
+      }
+
+      if (liPaths["1"] || liPaths["2"]) {
+        messages.push("Found LI output folders");
+      }
+
+      if (await hasEntry(sessionHandle, "logs")) {
+        messages.push("Found root logs folder");
+      }
+
+      if (descriptions.length) {
+        messages.push(`Found existing descriptions: ${descriptions.length}`);
+      }
+
+      if (!rootEpisodes.length && !liPaths["1"] && !liPaths["2"]) {
+        messages.push("Issue: no episode folders or LI folders found");
+      }
+
+      setLog(messages.join("\n"));
+    }
+
+    async function segregateSessionFolder() {
+      if (!sessionHandle) {
+        setLog("Please select a session folder first.");
+        return;
+      }
+      try {
+        showProgress("Preparing segregation");
+        segregateButton.disabled = true;
+        fixButton.disabled = true;
+        validateButton.disabled = true;
+        await nextFrame();
+
+        const message = await segregate(sessionHandle);
+        setLog(message);
+        finishProgress("Segregation complete");
+      } catch (error) {
+        setLog(`Segregate failed:
+${error.name}: ${error.message}`);
+        resetProgress();
+      } finally {
+        validateButton.disabled = false;
+        segregateButton.disabled = false;
+        fixButton.disabled = false;
+      }
+    }
+
+    async function segregate(sessionDir) {
+      if (!SESSION_PATTERN.test(sessionDir.name)) {
+        return "Session folder name must look like YYYY-MM-DD-HH-MM-SS";
+      }
+      const sessionName = sessionDir.name;
+      setProgress(8, "Scanning episode folders");
+      await nextFrame();
+
+      const episodes = await getRootEpisodeFolders(sessionDir);
+
+      setProgress(16, "Finding operator");
+      await nextFrame();
+
+      const operator = await findOperator(sessionDir);
+      const li1Name = `LI 1 [${operator}]`;
+      const li2Name = `LI 2 [${operator}]`;
+      setProgress(25, "Creating LI folders");
+      await nextFrame();
+
+      const li1Root = await sessionDir.getDirectoryHandle(li1Name, { create: true });
+      const li2Root = await sessionDir.getDirectoryHandle(li2Name, { create: true });
+      const li1Session = await li1Root.getDirectoryHandle(sessionName, { create: true });
+      const li2Session = await li2Root.getDirectoryHandle(sessionName, { create: true });
+
+      const messages = [];
+
+      setProgress(34, "Checking old LI folders");
+      await nextFrame();
+
+      messages.push(...await migrateOldLiNames(sessionDir, operator));
+
+      let evenCount = 0;
+      let oddCount = 0;
+      const merged = [];
+      for (let index = 0; index < episodes.length; index += 1) {
+        const episode = episodes[index];
+        const movePercent = episodes.length ? 40 + ((index + 1) / episodes.length) * 38 : 78;
+        setProgress(movePercent, `Moving episode ${index + 1} of ${episodes.length}`);
+        await nextFrame();
+
+        const destinationSession = episode.number % 2 === 0 ? li1Session : li2Session;
+        const destinationExists = await hasEntry(destinationSession, episode.name);
+        const destination = await destinationSession.getDirectoryHandle(episode.name, { create: true });
+        await mergeDirectoryIntoParent(sessionDir, episode.name, destination);
+        if (destinationExists) merged.push(`Merged duplicate root episode into destination: ${episode.name}`);
+        if (episode.number % 2 === 0) evenCount += 1;
+        else oddCount += 1;
+      }
+
+      setProgress(84, "Copying logs");
+      await nextFrame();
+
+      const logMessage = await copyLogsToEachLiThenRemoveRootLogs(sessionDir, [li1Session, li2Session]);
+
+      setProgress(92, "Finalizing segregation");
+      await nextFrame();
+
+      const summary = [
+        "Segregation complete",
+        "",
+        `Even episodes moved to LI 1: ${evenCount}`,
+        `Odd episodes moved to LI 2: ${oddCount}`,
+        logMessage === "No root logs folder found."
+          ? "No root logs folder found"
+          : "Logs copied successfully"
+      ];
+
+      if (merged.length) {
+        summary.push(`Merged duplicate episodes: ${merged.length}`);
+      }
+
+      if (messages.length) {
+        summary.push("", ...messages);
+      }
+
+      return summary.join("\n");
+    }
+
+    async function fixDescriptions() {
+      if (!sessionHandle) {
+        setLog("Please select a session folder first.");
+        return;
+      }
+      const li1 = li1Description.value.trim();
+      const li2 = li2Description.value.trim();
+      if (!li1 || !li2) {
+        setLog("Select a task name first so LI 1 and LI 2 descriptions can be filled automatically.");
+        return;
+      }
+      try {
+        showProgress("Preparing description fix");
+        segregateButton.disabled = true;
+        fixButton.disabled = true;
+        validateButton.disabled = true;
+        await nextFrame();
+
+        const message = await fixDescriptionsInMetadata(sessionHandle, li1, li2);
+        setLog(message);
+        finishProgress("Description fix complete");
+      } catch (error) {
+        setLog(`Fix Descriptions failed:
+${error.name}: ${error.message}`);
+        resetProgress();
+      } finally {
+        validateButton.disabled = false;
+        segregateButton.disabled = false;
+        fixButton.disabled = false;
+      }
+    }
+
+    async function fixDescriptionsInMetadata(sessionDir, li1, li2) {
+      setProgress(12, "Finding LI folders");
+      await nextFrame();
+
+      const liPaths = await findLiSessionPaths(sessionDir);
+
+      setProgress(28, "Scanning metadata files");
+      await nextFrame();
+
+      let li1Files = await metadataFilesForLi(liPaths["1"], sessionDir.name);
+      let li2Files = await metadataFilesForLi(liPaths["2"], sessionDir.name);
+
+      if (!li1Files.length && !li2Files.length) {
+        setProgress(42, "Checking root episode folders");
+        await nextFrame();
+
+        const rootEpisodes = await getRootEpisodeFolders(sessionDir);
+        for (const episode of rootEpisodes) {
+          try {
+            const metadataHandle = await episode.handle.getFileHandle("metadata.json");
+            if (episode.number % 2 === 0) li1Files.push({ name: `${episode.name}/metadata.json`, handle: metadataHandle });
+            else li2Files.push({ name: `${episode.name}/metadata.json`, handle: metadataHandle });
+          } catch (_) {}
+        }
+      }
+
+      if (!li1Files.length && !li2Files.length) {
+        return "No episode metadata.json files found. Select the original session folder or the already-segregated session folder.";
+      }
+
+      const totalFiles = li1Files.length + li2Files.length;
+      let updatedFiles = 0;
+
+      for (const item of li1Files) {
+        updatedFiles += 1;
+        setProgress(55 + (updatedFiles / Math.max(totalFiles, 1)) * 38, `Updating metadata ${updatedFiles} of ${totalFiles}`);
+        await nextFrame();
+        await updateMetadataDescription(item.handle, li1);
+      }
+
+      for (const item of li2Files) {
+        updatedFiles += 1;
+        setProgress(55 + (updatedFiles / Math.max(totalFiles, 1)) * 38, `Updating metadata ${updatedFiles} of ${totalFiles}`);
+        await nextFrame();
+        await updateMetadataDescription(item.handle, li2);
+      }
+
+      setProgress(96, "Finalizing description fix");
+      await nextFrame();
+
+      return [
+        "Description fix complete",
+        "",
+        `Task: ${taskName.value.trim()}`,
+        "",
+        `LI 1 files updated: ${li1Files.length}`,
+        `LI 2 files updated: ${li2Files.length}`
+      ].join("\n");
+    }
+
+    function applyTaskDescriptions() {
+      const selected = taskName.value;
+      const descriptions = TASK_DESCRIPTION_MAP[selected] || ["", ""];
+      li1Description.value = descriptions[0];
+      li2Description.value = descriptions[1];
+    }
+
+    function populateTasks() {
+      Object.keys(TASK_DESCRIPTION_MAP).sort().forEach(name => {
+        const option = document.createElement("option");
+        option.value = name;
+        option.textContent = name;
+        taskName.appendChild(option);
+      });
+      applyTaskDescriptions();
+    }
+
+    async function pickSessionFolder() {
+      if (!window.showDirectoryPicker) {
+        setLog("This browser does not support folder write access. Please open this HTML file in Chrome or Edge.");
+        return;
+      }
+      try {
+        sessionHandle = await window.showDirectoryPicker({ mode: "readwrite" });
+        folderName.value = sessionHandle.name;
+        validateButton.disabled = false;
+        segregateButton.disabled = false;
+        fixButton.disabled = false;
+        await validateSessionFolder();
+      } catch (error) {
+        if (error.name !== "AbortError") {
+          setLog(`Folder selection failed:\n${error.name}: ${error.message}`);
+        }
+      }
+    }
+
+    pickFolderButton.addEventListener("click", pickSessionFolder);
+    validateButton.addEventListener("click", validateSessionFolder);
+    segregateButton.addEventListener("click", segregateSessionFolder);
+    fixButton.addEventListener("click", fixDescriptions);
+    taskName.addEventListener("change", applyTaskDescriptions);
+
+    populateTasks();
+    setLog("Ready. Select a session folder to start.");
+    resetProgress();
+  </script>
+</body>
+</html>

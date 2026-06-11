@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>Long Horizon Session Description Fixer</title>
   <style>
     :root {
@@ -22,14 +22,27 @@
 
     * { box-sizing: border-box; }
 
+    html {
+      touch-action: none;
+      -webkit-text-size-adjust: 100%;
+      text-size-adjust: 100%;
+    }
+
     html,
     body {
       margin: 0;
       width: 100%;
       height: 100%;
       overflow: hidden;
+      overscroll-behavior: none;
+
+      display: flex;
+      justify-content: center;
+      align-items: center;
+
       font-family: "Segoe UI", Arial, sans-serif;
       color: var(--ink);
+
       background:
         radial-gradient(circle at top left, rgba(37, 99, 235, 0.14), transparent 34%),
         linear-gradient(135deg, #f8fbff 0%, var(--bg) 100%);
@@ -37,12 +50,18 @@
 
     .page {
       width: min(1040px, calc(100vw - 24px));
-      height: calc(100vh - 24px);
-      margin: 12px auto;
+      max-width: 1040px;
+
+      margin: auto;
+
       display: grid;
-      grid-template-rows: auto 1fr;
+      grid-template-rows: auto auto;
       gap: 10px;
-      min-height: 0;
+
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
     }
 
     .hero {
@@ -72,7 +91,7 @@
       min-height: 0;
       display: grid;
       grid-template-columns: 1fr 1fr;
-      grid-template-rows: auto auto minmax(120px, 1fr);
+      grid-template-rows: auto auto auto;
       gap: 10px;
       margin-top: 0;
     }
@@ -84,6 +103,10 @@
       padding: 13px;
       box-shadow: 0 8px 22px rgba(15, 23, 42, 0.07);
       min-width: 0;
+    }
+
+    .grid > .card:not(.full) {
+      min-height: 176px;
     }
 
     .card.full { grid-column: 1 / -1; }
@@ -162,7 +185,7 @@
 
     .status {
       min-height: 0;
-      height: clamp(105px, 18vh, 160px);
+      height: 118px;
       resize: none;
       font-family: Consolas, "Courier New", monospace;
       font-size: 12px;
@@ -230,9 +253,10 @@
 
     .card.full:last-child {
       min-height: 0;
-      padding-bottom: 16px;
+      padding-bottom: 14px;
       display: grid;
-      grid-template-rows: auto minmax(0, auto) auto;
+      grid-template-rows: auto auto auto;
+      align-self: start;
     }
 
     .card.full:last-child h2 {
@@ -282,7 +306,6 @@
         <p class="help">Choose the root session folder named like <b>YYYY-MM-DD-HH-MM-SS</b>.</p>
         <div class="button-row">
           <button id="pickFolderButton">Browse Session Folder</button>
-          <button id="validateButton" class="secondary" disabled>Validate Again</button>
         </div>
         <div class="row" style="margin-top:12px; margin-bottom:0;">
           <label>Selected folder</label>
@@ -330,7 +353,7 @@
   </main>
 
   <script>
-    const APP_VERSION = "html-light-modern-v4-clean-logs";
+    const APP_VERSION = "html-light-modern-v7-no-zoom-faster-segregate";
 
     const TASK_DESCRIPTION_MAP = {
       "assembly-disassembly-Cars3Mcqueen": ["assembly-Cars3Mcqueen", "disassembly-Cars3Mcqueen"],
@@ -367,7 +390,6 @@
     let sessionHandle = null;
 
     const pickFolderButton = document.getElementById("pickFolderButton");
-    const validateButton = document.getElementById("validateButton");
     const segregateButton = document.getElementById("segregateButton");
     const fixButton = document.getElementById("fixButton");
     const folderName = document.getElementById("folderName");
@@ -410,6 +432,35 @@
 
     function nextFrame() {
       return new Promise(resolve => requestAnimationFrame(resolve));
+    }
+
+    function preventPageZoom() {
+      window.addEventListener("wheel", event => {
+        if (event.ctrlKey) {
+          event.preventDefault();
+        }
+      }, { passive: false });
+
+      window.addEventListener("keydown", event => {
+        const key = event.key;
+        const isZoomKey = key === "+" || key === "-" || key === "=" || key === "0";
+        if ((event.ctrlKey || event.metaKey) && isZoomKey) {
+          event.preventDefault();
+        }
+      });
+
+      window.addEventListener("gesturestart", event => event.preventDefault(), { passive: false });
+      window.addEventListener("gesturechange", event => event.preventDefault(), { passive: false });
+      window.addEventListener("gestureend", event => event.preventDefault(), { passive: false });
+    }
+
+    async function directoryExists(parentHandle, name) {
+      try {
+        await parentHandle.getDirectoryHandle(name);
+        return true;
+      } catch (_) {
+        return false;
+      }
     }
 
     function escapeRegex(text) {
@@ -672,7 +723,6 @@
         showProgress("Preparing segregation");
         segregateButton.disabled = true;
         fixButton.disabled = true;
-        validateButton.disabled = true;
         await nextFrame();
 
         const message = await segregate(sessionHandle);
@@ -683,7 +733,6 @@
 ${error.name}: ${error.message}`);
         resetProgress();
       } finally {
-        validateButton.disabled = false;
         segregateButton.disabled = false;
         fixButton.disabled = false;
       }
@@ -695,18 +744,13 @@ ${error.name}: ${error.message}`);
       }
       const sessionName = sessionDir.name;
       setProgress(8, "Scanning episode folders");
-      await nextFrame();
-
       const episodes = await getRootEpisodeFolders(sessionDir);
 
       setProgress(16, "Finding operator");
-      await nextFrame();
-
       const operator = await findOperator(sessionDir);
       const li1Name = `LI 1 [${operator}]`;
       const li2Name = `LI 2 [${operator}]`;
       setProgress(25, "Creating LI folders");
-      await nextFrame();
 
       const li1Root = await sessionDir.getDirectoryHandle(li1Name, { create: true });
       const li2Root = await sessionDir.getDirectoryHandle(li2Name, { create: true });
@@ -716,21 +760,24 @@ ${error.name}: ${error.message}`);
       const messages = [];
 
       setProgress(34, "Checking old LI folders");
-      await nextFrame();
-
       messages.push(...await migrateOldLiNames(sessionDir, operator));
 
       let evenCount = 0;
       let oddCount = 0;
       const merged = [];
+      const progressStep = Math.max(1, Math.ceil(episodes.length / 12));
+
       for (let index = 0; index < episodes.length; index += 1) {
         const episode = episodes[index];
-        const movePercent = episodes.length ? 40 + ((index + 1) / episodes.length) * 38 : 78;
-        setProgress(movePercent, `Moving episode ${index + 1} of ${episodes.length}`);
-        await nextFrame();
+
+        if (index === 0 || index === episodes.length - 1 || index % progressStep === 0) {
+          const movePercent = episodes.length ? 40 + ((index + 1) / episodes.length) * 38 : 78;
+          setProgress(movePercent, `Moving episode ${index + 1} of ${episodes.length}`);
+          await nextFrame();
+        }
 
         const destinationSession = episode.number % 2 === 0 ? li1Session : li2Session;
-        const destinationExists = await hasEntry(destinationSession, episode.name);
+        const destinationExists = await directoryExists(destinationSession, episode.name);
         const destination = await destinationSession.getDirectoryHandle(episode.name, { create: true });
         await mergeDirectoryIntoParent(sessionDir, episode.name, destination);
         if (destinationExists) merged.push(`Merged duplicate root episode into destination: ${episode.name}`);
@@ -744,7 +791,6 @@ ${error.name}: ${error.message}`);
       const logMessage = await copyLogsToEachLiThenRemoveRootLogs(sessionDir, [li1Session, li2Session]);
 
       setProgress(92, "Finalizing segregation");
-      await nextFrame();
 
       const summary = [
         "Segregation complete",
@@ -782,7 +828,6 @@ ${error.name}: ${error.message}`);
         showProgress("Preparing description fix");
         segregateButton.disabled = true;
         fixButton.disabled = true;
-        validateButton.disabled = true;
         await nextFrame();
 
         const message = await fixDescriptionsInMetadata(sessionHandle, li1, li2);
@@ -793,7 +838,6 @@ ${error.name}: ${error.message}`);
 ${error.name}: ${error.message}`);
         resetProgress();
       } finally {
-        validateButton.disabled = false;
         segregateButton.disabled = false;
         fixButton.disabled = false;
       }
@@ -884,7 +928,6 @@ ${error.name}: ${error.message}`);
       try {
         sessionHandle = await window.showDirectoryPicker({ mode: "readwrite" });
         folderName.value = sessionHandle.name;
-        validateButton.disabled = false;
         segregateButton.disabled = false;
         fixButton.disabled = false;
         await validateSessionFolder();
@@ -896,11 +939,11 @@ ${error.name}: ${error.message}`);
     }
 
     pickFolderButton.addEventListener("click", pickSessionFolder);
-    validateButton.addEventListener("click", validateSessionFolder);
     segregateButton.addEventListener("click", segregateSessionFolder);
     fixButton.addEventListener("click", fixDescriptions);
     taskName.addEventListener("change", applyTaskDescriptions);
 
+    preventPageZoom();
     populateTasks();
     setLog("Ready. Select a session folder to start.");
     resetProgress();

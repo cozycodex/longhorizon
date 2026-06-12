@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>Long Horizon Session Description Fixer</title>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <style>
     :root {
       --bg: #eef3fb;
@@ -24,18 +25,8 @@
 
     html {
       touch-action: none;
-      -ms-touch-action: none;
-      -webkit-text-size-adjust: none;
-      text-size-adjust: none;
-      overscroll-behavior: none;
-    }
-
-    body,
-    button,
-    input,
-    select,
-    textarea {
-      touch-action: manipulation;
+      -webkit-text-size-adjust: 100%;
+      text-size-adjust: 100%;
     }
 
     html,
@@ -190,6 +181,46 @@
       flex-wrap: wrap;
     }
 
+
+    .session-title-line {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      min-width: 0;
+    }
+
+    .session-title-line h2 {
+      margin: 0;
+      white-space: nowrap;
+    }
+
+    .selected-name {
+      min-width: 0;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .mode-badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      padding: 5px 9px;
+      border-radius: 999px;
+      background: #eff6ff;
+      color: #1e40af;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .hidden-file {
+      display: none;
+    }
+
     .secondary { background: #475569; }
     .secondary:hover { background: #334155; }
 
@@ -240,25 +271,8 @@
     .danger { color: var(--bad); }
     .success { color: var(--good); }
 
-    .card.full:first-child {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      grid-template-areas:
-        "title title"
-        "help help"
-        "buttons selected";
-      gap: 8px 12px;
-      align-items: end;
-    }
-
-    .card.full:first-child h2 { grid-area: title; }
-    .card.full:first-child .help { grid-area: help; margin-bottom: 0; }
-    .card.full:first-child .button-row { grid-area: buttons; }
-
-    .card.full:first-child .row {
-      grid-area: selected;
-      width: min(420px, 42vw);
-      margin: 0;
+    .card.full:first-child .help {
+      margin-bottom: 8px;
     }
 
     .card.full:last-child {
@@ -289,17 +303,8 @@
         grid-template-columns: 1fr;
       }
 
-      .card.full:first-child {
-        grid-template-columns: 1fr;
-        grid-template-areas:
-          "title"
-          "help"
-          "buttons"
-          "selected";
-      }
-
-      .card.full:first-child .row {
-        width: 100%;
+      .session-title-line {
+        align-items: flex-start;
       }
     }
   </style>
@@ -312,15 +317,21 @@
 
     <section class="grid">
       <div class="card full">
-        <h2>Session Folder</h2>
+        <div class="session-title-line">
+          <h2>Session Folder:</h2>
+          <span id="folderName" class="selected-name">No folder or ZIP selected</span>
+        </div>
+
         <p class="help">Choose the root session folder named like <b>YYYY-MM-DD-HH-MM-SS</b>.</p>
+
         <div class="button-row">
           <button id="pickFolderButton">Browse Session Folder</button>
+          <button id="zipUploadButton" class="secondary">Upload Session ZIP</button>
+          <button id="downloadZipButton" class="secondary" disabled>Download Processed ZIP</button>
+          <span id="modeBadge" class="mode-badge">Detecting browser...</span>
         </div>
-        <div class="row" style="margin-top:12px; margin-bottom:0;">
-          <label>Selected folder</label>
-          <input id="folderName" readonly placeholder="No folder selected">
-        </div>
+
+        <input id="zipInput" class="hidden-file" type="file" accept=".zip,application/zip,application/x-zip-compressed">
       </div>
 
       <div class="card">
@@ -363,7 +374,7 @@
   </main>
 
   <script>
-    const APP_VERSION = "html-light-modern-v8-github-pages-zoom-lock";
+    const APP_VERSION = "html-light-modern-v11-simple-session-label";
 
     const TASK_DESCRIPTION_MAP = {
       "assembly-disassembly-Cars3Mcqueen": ["assembly-Cars3Mcqueen", "disassembly-Cars3Mcqueen"],
@@ -398,8 +409,18 @@
     const OLD_LI_PATTERN = /^LI ([12]) (.+)$/;
 
     let sessionHandle = null;
+    let zipMode = false;
+    let zipFile = null;
+    let zipObject = null;
+    let zipEntries = new Map();
+    let zipSessionName = "";
+    let zipRootPrefix = "";
 
     const pickFolderButton = document.getElementById("pickFolderButton");
+    const zipUploadButton = document.getElementById("zipUploadButton");
+    const downloadZipButton = document.getElementById("downloadZipButton");
+    const zipInput = document.getElementById("zipInput");
+    const modeBadge = document.getElementById("modeBadge");
     const segregateButton = document.getElementById("segregateButton");
     const fixButton = document.getElementById("fixButton");
     const folderName = document.getElementById("folderName");
@@ -445,64 +466,23 @@
     }
 
     function preventPageZoom() {
-      const blockZoom = event => {
-        event.preventDefault();
-        event.stopPropagation();
-      };
-
-      const blockCtrlZoom = event => {
-        if (event.ctrlKey || event.metaKey) {
-          blockZoom(event);
+      window.addEventListener("wheel", event => {
+        if (event.ctrlKey) {
+          event.preventDefault();
         }
-      };
+      }, { passive: false });
 
-      const blockZoomKeys = event => {
+      window.addEventListener("keydown", event => {
         const key = event.key;
-        const code = event.code;
-        const isZoomKey =
-          key === "+" ||
-          key === "-" ||
-          key === "=" ||
-          key === "0" ||
-          code === "NumpadAdd" ||
-          code === "NumpadSubtract" ||
-          code === "Equal" ||
-          code === "Minus" ||
-          code === "Digit0";
-
+        const isZoomKey = key === "+" || key === "-" || key === "=" || key === "0";
         if ((event.ctrlKey || event.metaKey) && isZoomKey) {
-          blockZoom(event);
+          event.preventDefault();
         }
-      };
+      });
 
-      const blockPinch = event => {
-        if (event.touches && event.touches.length > 1) {
-          blockZoom(event);
-        }
-      };
-
-      let lastTouchEnd = 0;
-      const blockDoubleTap = event => {
-        const now = Date.now();
-        if (now - lastTouchEnd <= 300) {
-          blockZoom(event);
-        }
-        lastTouchEnd = now;
-      };
-
-      document.addEventListener("wheel", blockCtrlZoom, { passive: false, capture: true });
-      window.addEventListener("wheel", blockCtrlZoom, { passive: false, capture: true });
-
-      document.addEventListener("keydown", blockZoomKeys, { passive: false, capture: true });
-      window.addEventListener("keydown", blockZoomKeys, { passive: false, capture: true });
-
-      document.addEventListener("touchstart", blockPinch, { passive: false, capture: true });
-      document.addEventListener("touchmove", blockPinch, { passive: false, capture: true });
-      document.addEventListener("touchend", blockDoubleTap, { passive: false, capture: true });
-
-      document.addEventListener("gesturestart", blockZoom, { passive: false, capture: true });
-      document.addEventListener("gesturechange", blockZoom, { passive: false, capture: true });
-      document.addEventListener("gestureend", blockZoom, { passive: false, capture: true });
+      window.addEventListener("gesturestart", event => event.preventDefault(), { passive: false });
+      window.addEventListener("gesturechange", event => event.preventDefault(), { passive: false });
+      window.addEventListener("gestureend", event => event.preventDefault(), { passive: false });
     }
 
     async function directoryExists(parentHandle, name) {
@@ -766,8 +746,12 @@
     }
 
     async function segregateSessionFolder() {
-      if (!sessionHandle) {
+      if (!sessionHandle && !zipMode) {
         setLog("Please select a session folder first.");
+        return;
+      }
+      if (zipMode && !zipObject) {
+        setLog("Please upload a session ZIP first.");
         return;
       }
       try {
@@ -776,7 +760,7 @@
         fixButton.disabled = true;
         await nextFrame();
 
-        const message = await segregate(sessionHandle);
+        const message = zipMode ? await segregateZip() : await segregate(sessionHandle);
         setLog(message);
         finishProgress("Segregation complete");
       } catch (error) {
@@ -865,8 +849,12 @@ ${error.name}: ${error.message}`);
     }
 
     async function fixDescriptions() {
-      if (!sessionHandle) {
+      if (!sessionHandle && !zipMode) {
         setLog("Please select a session folder first.");
+        return;
+      }
+      if (zipMode && !zipObject) {
+        setLog("Please upload a session ZIP first.");
         return;
       }
       const li1 = li1Description.value.trim();
@@ -881,7 +869,7 @@ ${error.name}: ${error.message}`);
         fixButton.disabled = true;
         await nextFrame();
 
-        const message = await fixDescriptionsInMetadata(sessionHandle, li1, li2);
+        const message = zipMode ? await fixDescriptionsInZip(li1, li2) : await fixDescriptionsInMetadata(sessionHandle, li1, li2);
         setLog(message);
         finishProgress("Description fix complete");
       } catch (error) {
@@ -971,16 +959,489 @@ ${error.name}: ${error.message}`);
       applyTaskDescriptions();
     }
 
-    async function pickSessionFolder() {
-      if (!window.showDirectoryPicker) {
-        setLog("This browser does not support folder write access. Please open this HTML file in Chrome or Edge.");
+
+    function isDirectoryPickerSupported() {
+      return typeof window.showDirectoryPicker === "function";
+    }
+
+    function updateModeUI() {
+      if (isDirectoryPickerSupported()) {
+        modeBadge.textContent = zipMode ? "ZIP mode" : "Folder mode";
+        pickFolderButton.disabled = false;
+      } else {
+        modeBadge.textContent = "ZIP mode";
+        pickFolderButton.disabled = true;
+      }
+    }
+
+    function normalizeZipPath(path) {
+      return path.replace(/\\/g, "/").replace(/^\/+/, "");
+    }
+
+    function zipParentPath(path) {
+      const clean = normalizeZipPath(path).replace(/\/$/, "");
+      const index = clean.lastIndexOf("/");
+      return index === -1 ? "" : clean.slice(0, index + 1);
+    }
+
+    function zipBaseName(path) {
+      const clean = normalizeZipPath(path).replace(/\/$/, "");
+      const index = clean.lastIndexOf("/");
+      return index === -1 ? clean : clean.slice(index + 1);
+    }
+
+    function getZipSessionNameFromEntries(entries) {
+      const sessionNames = new Set();
+
+      for (const path of entries.keys()) {
+        const parts = normalizeZipPath(path).split("/").filter(Boolean);
+
+        for (const part of parts) {
+          if (SESSION_PATTERN.test(part)) {
+            sessionNames.add(part);
+          }
+        }
+      }
+
+      if (sessionNames.size === 1) return [...sessionNames][0];
+
+      for (const path of entries.keys()) {
+        const first = normalizeZipPath(path).split("/").filter(Boolean)[0];
+        if (SESSION_PATTERN.test(first)) return first;
+      }
+
+      return "";
+    }
+
+    function findZipRootPrefix(entries, sessionName) {
+      for (const path of entries.keys()) {
+        const parts = normalizeZipPath(path).split("/").filter(Boolean);
+        const index = parts.indexOf(sessionName);
+        if (index !== -1) {
+          return parts.slice(0, index).join("/") + (index > 0 ? "/" : "");
+        }
+      }
+      return "";
+    }
+
+    function zipSessionPrefix() {
+      return `${zipRootPrefix}${zipSessionName}/`;
+    }
+
+    function getZipRootEpisodeFolders() {
+      const prefix = zipSessionPrefix();
+      const episodes = new Map();
+
+      for (const path of zipEntries.keys()) {
+        if (!path.startsWith(prefix)) continue;
+
+        const rest = path.slice(prefix.length);
+        const first = rest.split("/")[0];
+        if (!first) continue;
+
+        const number = episodeNumberFromName(zipSessionName, first);
+        if (number !== null) {
+          episodes.set(first, { name: first, number });
+        }
+      }
+
+      return [...episodes.values()].sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    function getZipLiFolders() {
+      const prefix = zipSessionPrefix();
+      const found = { "1": null, "2": null };
+
+      for (const path of zipEntries.keys()) {
+        if (!path.startsWith(prefix)) continue;
+
+        const rest = path.slice(prefix.length);
+        const first = rest.split("/")[0];
+        if (!first) continue;
+
+        const match = first.match(LI_PATTERN) || first.match(OLD_LI_PATTERN);
+        if (!match) continue;
+
+        found[match[1]] = first;
+      }
+
+      return found;
+    }
+
+    async function readZipJson(path) {
+      const entry = zipEntries.get(path);
+      if (!entry || entry.dir) throw new Error(`Missing ZIP entry: ${path}`);
+      return JSON.parse(await entry.async("text"));
+    }
+
+    function writeZipJson(path, data) {
+      zipObject.file(path, JSON.stringify(data, null, 4) + "\n");
+      zipEntries.set(path, zipObject.file(path));
+    }
+
+    async function findZipOperator() {
+      const prefix = zipSessionPrefix();
+      const episodes = getZipRootEpisodeFolders();
+
+      for (const episode of episodes) {
+        const metadataPath = `${prefix}${episode.name}/metadata.json`;
+        if (!zipEntries.has(metadataPath)) continue;
+
+        try {
+          const metadata = await readZipJson(metadataPath);
+          const operator = String(metadata?.config?.operator || "").trim();
+          if (operator) return safeOperator(operator);
+        } catch (_) {}
+      }
+
+      for (const path of zipEntries.keys()) {
+        if (!path.endsWith("/metadata.json")) continue;
+
+        try {
+          const metadata = await readZipJson(path);
+          const operator = String(metadata?.config?.operator || "").trim();
+          if (operator) return safeOperator(operator);
+        } catch (_) {}
+      }
+
+      throw new Error("Could not find config.operator in any metadata.json file.");
+    }
+
+    async function copyZipEntry(sourcePath, destinationPath) {
+      const entry = zipEntries.get(sourcePath);
+      if (!entry || entry.dir) return;
+      const data = await entry.async("blob");
+      zipObject.file(destinationPath, data);
+      zipEntries.set(destinationPath, zipObject.file(destinationPath));
+    }
+
+    async function copyZipFolder(sourcePrefix, destinationPrefix) {
+      const paths = [...zipEntries.keys()].filter(path => path.startsWith(sourcePrefix));
+
+      for (const sourcePath of paths) {
+        const entry = zipEntries.get(sourcePath);
+        const relativePath = sourcePath.slice(sourcePrefix.length);
+        const destinationPath = destinationPrefix + relativePath;
+
+        if (entry.dir) {
+          zipObject.folder(destinationPath);
+        } else {
+          await copyZipEntry(sourcePath, destinationPath);
+        }
+      }
+    }
+
+    function removeZipPrefix(prefix) {
+      const paths = [...zipEntries.keys()].filter(path => path.startsWith(prefix));
+      for (const path of paths) {
+        zipObject.remove(path);
+        zipEntries.delete(path);
+      }
+    }
+
+    async function moveZipFolder(sourcePrefix, destinationPrefix) {
+      await copyZipFolder(sourcePrefix, destinationPrefix);
+      removeZipPrefix(sourcePrefix);
+    }
+
+    async function validateZipSession() {
+      if (!zipObject || !zipSessionName) {
+        setLog("ZIP loaded, but no valid session folder was found.");
         return;
       }
+
+      const rootEpisodes = getZipRootEpisodeFolders();
+      const liPaths = getZipLiFolders();
+      const descriptions = new Set();
+      const hasLogs = [...zipEntries.keys()].some(path => path.startsWith(`${zipSessionPrefix()}logs/`));
+
+      for (const path of zipEntries.keys()) {
+        if (!path.endsWith("/metadata.json")) continue;
+        try {
+          const metadata = await readZipJson(path);
+          for (const value of [metadata?.session?.description, metadata?.config?.description]) {
+            const text = String(value || "").trim();
+            if (text) descriptions.add(text);
+          }
+        } catch (_) {}
+      }
+
+      const messages = [];
+      messages.push("ZIP loaded successfully");
+      messages.push(`Session folder: ${zipSessionName}`);
+      if (rootEpisodes.length) messages.push(`Found root episode folders: ${rootEpisodes.length}`);
+      if (liPaths["1"] || liPaths["2"]) messages.push("Found LI output folders");
+      if (hasLogs) messages.push("Found root logs folder");
+      if (descriptions.size) messages.push(`Found existing descriptions: ${descriptions.size}`);
+      if (!rootEpisodes.length && !liPaths["1"] && !liPaths["2"]) messages.push("Issue: no episode folders or LI folders found");
+
+      setLog(messages.join("\n"));
+    }
+
+    async function pickZipFile() {
+      zipInput.value = "";
+      zipInput.click();
+    }
+
+    async function loadZipFile(file) {
+      if (!window.JSZip) {
+        setLog("ZIP support failed to load. Check your internet connection and reload this page.");
+        return;
+      }
+
       try {
+        showProgress("Loading ZIP");
+        zipMode = true;
+        sessionHandle = null;
+        zipFile = file;
+        zipObject = await JSZip.loadAsync(file);
+        zipEntries = new Map(Object.entries(zipObject.files));
+        zipSessionName = getZipSessionNameFromEntries(zipEntries);
+        zipRootPrefix = zipSessionName ? findZipRootPrefix(zipEntries, zipSessionName) : "";
+
+        folderName.textContent = file.name;
+        segregateButton.disabled = !zipSessionName;
+        fixButton.disabled = !zipSessionName;
+        downloadZipButton.disabled = !zipSessionName;
+        updateModeUI();
+
+        await validateZipSession();
+        finishProgress("ZIP ready");
+      } catch (error) {
+        setLog(`ZIP load failed:\n${error.name}: ${error.message}`);
+        resetProgress();
+      }
+    }
+
+    async function segregateZip() {
+      if (!zipObject || !zipSessionName) return "Please upload a valid session ZIP first.";
+
+      if (!SESSION_PATTERN.test(zipSessionName)) {
+        return "Session folder name must look like YYYY-MM-DD-HH-MM-SS";
+      }
+
+      setProgress(8, "Scanning ZIP episodes");
+      const episodes = getZipRootEpisodeFolders();
+
+      setProgress(16, "Finding operator");
+      const operator = await findZipOperator();
+
+      const prefix = zipSessionPrefix();
+      const li1Name = `LI 1 [${operator}]`;
+      const li2Name = `LI 2 [${operator}]`;
+      const li1SessionPrefix = `${prefix}${li1Name}/${zipSessionName}/`;
+      const li2SessionPrefix = `${prefix}${li2Name}/${zipSessionName}/`;
+
+      setProgress(25, "Creating LI folders");
+      zipObject.folder(li1SessionPrefix);
+      zipObject.folder(li2SessionPrefix);
+
+      let evenCount = 0;
+      let oddCount = 0;
+      let mergedCount = 0;
+
+      const progressStep = Math.max(1, Math.ceil(episodes.length / 12));
+
+      for (let index = 0; index < episodes.length; index += 1) {
+        const episode = episodes[index];
+
+        if (index === 0 || index === episodes.length - 1 || index % progressStep === 0) {
+          const movePercent = episodes.length ? 40 + ((index + 1) / episodes.length) * 38 : 78;
+          setProgress(movePercent, `Moving episode ${index + 1} of ${episodes.length}`);
+          await nextFrame();
+        }
+
+        const sourcePrefix = `${prefix}${episode.name}/`;
+        const destinationSessionPrefix = episode.number % 2 === 0 ? li1SessionPrefix : li2SessionPrefix;
+        const destinationPrefix = `${destinationSessionPrefix}${episode.name}/`;
+        const destinationExists = [...zipEntries.keys()].some(path => path.startsWith(destinationPrefix));
+
+        await moveZipFolder(sourcePrefix, destinationPrefix);
+
+        if (destinationExists) mergedCount += 1;
+        if (episode.number % 2 === 0) evenCount += 1;
+        else oddCount += 1;
+      }
+
+      setProgress(84, "Copying logs");
+      await nextFrame();
+
+      const logsPrefix = `${prefix}logs/`;
+      const hasLogs = [...zipEntries.keys()].some(path => path.startsWith(logsPrefix));
+      let logMessage = "No root logs folder found";
+
+      if (hasLogs) {
+        await copyZipFolder(logsPrefix, `${li1SessionPrefix}logs/`);
+        await copyZipFolder(logsPrefix, `${li2SessionPrefix}logs/`);
+        removeZipPrefix(logsPrefix);
+        logMessage = "Logs copied successfully";
+      }
+
+      setProgress(92, "Finalizing ZIP segregation");
+
+      const summary = [
+        "Segregation complete",
+        "",
+        `Even episodes moved to LI 1: ${evenCount}`,
+        `Odd episodes moved to LI 2: ${oddCount}`,
+        logMessage
+      ];
+
+      if (mergedCount) summary.push(`Merged duplicate episodes: ${mergedCount}`);
+
+      return summary.join("\n");
+    }
+
+    async function findZipMetadataFilesForLi(liNumber) {
+      const liFolders = getZipLiFolders();
+      const liFolder = liFolders[liNumber];
+      if (!liFolder) return [];
+
+      const liPrefix = `${zipSessionPrefix()}${liFolder}/`;
+      const nestedPrefix = `${liPrefix}${zipSessionName}/`;
+      const basePrefix = [...zipEntries.keys()].some(path => path.startsWith(nestedPrefix)) ? nestedPrefix : liPrefix;
+
+      const results = [];
+      const pattern = episodePattern(zipSessionName);
+
+      for (const path of zipEntries.keys()) {
+        if (!path.startsWith(basePrefix) || !path.endsWith("/metadata.json")) continue;
+
+        const rest = path.slice(basePrefix.length);
+        const episodeName = rest.split("/")[0];
+
+        if (pattern.test(episodeName)) {
+          results.push(path);
+        }
+      }
+
+      return results.sort((a, b) => a.localeCompare(b));
+    }
+
+    async function getZipRootMetadataByParity() {
+      const prefix = zipSessionPrefix();
+      const li1Files = [];
+      const li2Files = [];
+      const episodes = getZipRootEpisodeFolders();
+
+      for (const episode of episodes) {
+        const metadataPath = `${prefix}${episode.name}/metadata.json`;
+        if (!zipEntries.has(metadataPath)) continue;
+
+        if (episode.number % 2 === 0) li1Files.push(metadataPath);
+        else li2Files.push(metadataPath);
+      }
+
+      return { li1Files, li2Files };
+    }
+
+    async function fixDescriptionsInZip(li1, li2) {
+      if (!zipObject || !zipSessionName) return "Please upload a valid session ZIP first.";
+
+      setProgress(12, "Finding LI folders");
+      await nextFrame();
+
+      let li1Files = await findZipMetadataFilesForLi("1");
+      let li2Files = await findZipMetadataFilesForLi("2");
+
+      if (!li1Files.length && !li2Files.length) {
+        setProgress(42, "Checking root episode folders");
+        await nextFrame();
+
+        const rootFiles = await getZipRootMetadataByParity();
+        li1Files = rootFiles.li1Files;
+        li2Files = rootFiles.li2Files;
+      }
+
+      if (!li1Files.length && !li2Files.length) {
+        return "No episode metadata.json files found. Select the original session folder or the already-segregated session folder.";
+      }
+
+      const totalFiles = li1Files.length + li2Files.length;
+      let updatedFiles = 0;
+
+      for (const metadataPath of li1Files) {
+        updatedFiles += 1;
+        setProgress(55 + (updatedFiles / Math.max(totalFiles, 1)) * 38, `Updating metadata ${updatedFiles} of ${totalFiles}`);
+        await nextFrame();
+
+        const metadata = await readZipJson(metadataPath);
+        metadata.session = metadata.session || {};
+        metadata.config = metadata.config || {};
+        metadata.session.description = li1;
+        metadata.config.description = li1;
+        writeZipJson(metadataPath, metadata);
+      }
+
+      for (const metadataPath of li2Files) {
+        updatedFiles += 1;
+        setProgress(55 + (updatedFiles / Math.max(totalFiles, 1)) * 38, `Updating metadata ${updatedFiles} of ${totalFiles}`);
+        await nextFrame();
+
+        const metadata = await readZipJson(metadataPath);
+        metadata.session = metadata.session || {};
+        metadata.config = metadata.config || {};
+        metadata.session.description = li2;
+        metadata.config.description = li2;
+        writeZipJson(metadataPath, metadata);
+      }
+
+      setProgress(96, "Finalizing description fix");
+      await nextFrame();
+
+      return [
+        "Description fix complete",
+        "",
+        `Task: ${taskName.value.trim()}`,
+        "",
+        `LI 1 files updated: ${li1Files.length}`,
+        `LI 2 files updated: ${li2Files.length}`
+      ].join("\n");
+    }
+
+    async function downloadProcessedZip() {
+      if (!zipObject || !zipSessionName) {
+        setLog("Please upload and process a ZIP first.");
+        return;
+      }
+
+      try {
+        showProgress("Creating download ZIP");
+        const blob = await zipObject.generateAsync(
+          { type: "blob", compression: "DEFLATE", compressionOptions: { level: 6 } },
+          metadata => setProgress(metadata.percent, "Creating download ZIP")
+        );
+
+        const baseName = zipFile?.name?.replace(/\.zip$/i, "") || zipSessionName;
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `${baseName}_processed.zip`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(link.href);
+
+        finishProgress("ZIP download ready");
+      } catch (error) {
+        setLog(`Download ZIP failed:\n${error.name}: ${error.message}`);
+        resetProgress();
+      }
+    }
+
+    async function pickSessionFolder() {
+      if (!isDirectoryPickerSupported()) {
+        setLog("Firefox/Safari mode: use Upload Session ZIP, then process and download the fixed ZIP.");
+        return;
+      }
+
+      try {
+        zipMode = false;
         sessionHandle = await window.showDirectoryPicker({ mode: "readwrite" });
-        folderName.value = sessionHandle.name;
+        folderName.textContent = sessionHandle.name;
         segregateButton.disabled = false;
         fixButton.disabled = false;
+        downloadZipButton.disabled = true;
+        updateModeUI();
         await validateSessionFolder();
       } catch (error) {
         if (error.name !== "AbortError") {
@@ -990,11 +1451,18 @@ ${error.name}: ${error.message}`);
     }
 
     pickFolderButton.addEventListener("click", pickSessionFolder);
+    zipUploadButton.addEventListener("click", pickZipFile);
+    zipInput.addEventListener("change", event => {
+      const file = event.target.files && event.target.files[0];
+      if (file) loadZipFile(file);
+    });
+    downloadZipButton.addEventListener("click", downloadProcessedZip);
     segregateButton.addEventListener("click", segregateSessionFolder);
     fixButton.addEventListener("click", fixDescriptions);
     taskName.addEventListener("change", applyTaskDescriptions);
 
     preventPageZoom();
+    updateModeUI();
     populateTasks();
     setLog("Ready. Select a session folder to start.");
     resetProgress();

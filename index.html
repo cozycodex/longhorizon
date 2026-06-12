@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover">
   <title>Long Horizon Session Description Fixer</title>
   <style>
     :root {
@@ -24,8 +24,18 @@
 
     html {
       touch-action: none;
-      -webkit-text-size-adjust: 100%;
-      text-size-adjust: 100%;
+      -ms-touch-action: none;
+      -webkit-text-size-adjust: none;
+      text-size-adjust: none;
+      overscroll-behavior: none;
+    }
+
+    body,
+    button,
+    input,
+    select,
+    textarea {
+      touch-action: manipulation;
     }
 
     html,
@@ -353,7 +363,7 @@
   </main>
 
   <script>
-    const APP_VERSION = "html-light-modern-v7-no-zoom-faster-segregate";
+    const APP_VERSION = "html-light-modern-v8-github-pages-zoom-lock";
 
     const TASK_DESCRIPTION_MAP = {
       "assembly-disassembly-Cars3Mcqueen": ["assembly-Cars3Mcqueen", "disassembly-Cars3Mcqueen"],
@@ -435,23 +445,64 @@
     }
 
     function preventPageZoom() {
-      window.addEventListener("wheel", event => {
-        if (event.ctrlKey) {
-          event.preventDefault();
-        }
-      }, { passive: false });
+      const blockZoom = event => {
+        event.preventDefault();
+        event.stopPropagation();
+      };
 
-      window.addEventListener("keydown", event => {
+      const blockCtrlZoom = event => {
+        if (event.ctrlKey || event.metaKey) {
+          blockZoom(event);
+        }
+      };
+
+      const blockZoomKeys = event => {
         const key = event.key;
-        const isZoomKey = key === "+" || key === "-" || key === "=" || key === "0";
-        if ((event.ctrlKey || event.metaKey) && isZoomKey) {
-          event.preventDefault();
-        }
-      });
+        const code = event.code;
+        const isZoomKey =
+          key === "+" ||
+          key === "-" ||
+          key === "=" ||
+          key === "0" ||
+          code === "NumpadAdd" ||
+          code === "NumpadSubtract" ||
+          code === "Equal" ||
+          code === "Minus" ||
+          code === "Digit0";
 
-      window.addEventListener("gesturestart", event => event.preventDefault(), { passive: false });
-      window.addEventListener("gesturechange", event => event.preventDefault(), { passive: false });
-      window.addEventListener("gestureend", event => event.preventDefault(), { passive: false });
+        if ((event.ctrlKey || event.metaKey) && isZoomKey) {
+          blockZoom(event);
+        }
+      };
+
+      const blockPinch = event => {
+        if (event.touches && event.touches.length > 1) {
+          blockZoom(event);
+        }
+      };
+
+      let lastTouchEnd = 0;
+      const blockDoubleTap = event => {
+        const now = Date.now();
+        if (now - lastTouchEnd <= 300) {
+          blockZoom(event);
+        }
+        lastTouchEnd = now;
+      };
+
+      document.addEventListener("wheel", blockCtrlZoom, { passive: false, capture: true });
+      window.addEventListener("wheel", blockCtrlZoom, { passive: false, capture: true });
+
+      document.addEventListener("keydown", blockZoomKeys, { passive: false, capture: true });
+      window.addEventListener("keydown", blockZoomKeys, { passive: false, capture: true });
+
+      document.addEventListener("touchstart", blockPinch, { passive: false, capture: true });
+      document.addEventListener("touchmove", blockPinch, { passive: false, capture: true });
+      document.addEventListener("touchend", blockDoubleTap, { passive: false, capture: true });
+
+      document.addEventListener("gesturestart", blockZoom, { passive: false, capture: true });
+      document.addEventListener("gesturechange", blockZoom, { passive: false, capture: true });
+      document.addEventListener("gestureend", blockZoom, { passive: false, capture: true });
     }
 
     async function directoryExists(parentHandle, name) {

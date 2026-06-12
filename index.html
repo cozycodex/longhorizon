@@ -374,7 +374,7 @@
   </main>
 
   <script>
-    const APP_VERSION = "html-light-modern-v11-simple-session-label";
+    const APP_VERSION = "html-light-modern-v12-download-after-fix";
 
     const TASK_DESCRIPTION_MAP = {
       "assembly-disassembly-Cars3Mcqueen": ["assembly-Cars3Mcqueen", "disassembly-Cars3Mcqueen"],
@@ -871,6 +871,11 @@ ${error.name}: ${error.message}`);
 
         const message = zipMode ? await fixDescriptionsInZip(li1, li2) : await fixDescriptionsInMetadata(sessionHandle, li1, li2);
         setLog(message);
+
+        if (zipMode) {
+          downloadZipButton.disabled = false;
+        }
+
         finishProgress("Description fix complete");
       } catch (error) {
         setLog(`Fix Descriptions failed:
@@ -1202,7 +1207,7 @@ ${error.name}: ${error.message}`);
         folderName.textContent = file.name;
         segregateButton.disabled = !zipSessionName;
         fixButton.disabled = !zipSessionName;
-        downloadZipButton.disabled = !zipSessionName;
+        downloadZipButton.disabled = true;
         updateModeUI();
 
         await validateZipSession();
@@ -1436,6 +1441,7 @@ ${error.name}: ${error.message}`);
 
       try {
         zipMode = false;
+        downloadZipButton.disabled = true;
         sessionHandle = await window.showDirectoryPicker({ mode: "readwrite" });
         folderName.textContent = sessionHandle.name;
         segregateButton.disabled = false;
